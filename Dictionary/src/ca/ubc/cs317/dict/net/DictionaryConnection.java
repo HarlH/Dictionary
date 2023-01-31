@@ -22,7 +22,7 @@ public class DictionaryConnection {
     private Socket socket;
     private BufferedReader in;
     private PrintWriter out;
-    private boolean debug = true;
+    private boolean debug = false;
 
 
     /** Establishes a new connection with a DICT server using an explicit host and port number, and handles initial
@@ -36,19 +36,21 @@ public class DictionaryConnection {
     public DictionaryConnection(String host, int port) throws DictConnectionException {
 
         // TODO Add your code here
-        try{socket = new Socket(host, port);
-        in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-        out = new PrintWriter(socket.getOutputStream(), true);
+        try {
+            socket = new Socket(host, port);
+            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            out = new PrintWriter(socket.getOutputStream(), true);
 
-        // Receive the initial welcome message
-        String welcomeMessage = in.readLine();
-        if (welcomeMessage == null|| welcomeMessage.startsWith("5")||welcomeMessage.startsWith("4")) {
-            throw new DictConnectionException();
-        }
-        System.out.println(welcomeMessage);}
+            // Receive the initial welcome message
+            String welcomeMessage = in.readLine();
+            if (welcomeMessage == null || welcomeMessage.startsWith("5") || welcomeMessage.startsWith("4")) {
+                throw new DictConnectionException();
+            }
+            System.out.println(welcomeMessage);
 
-        catch(Exception e){
-            System.out.println("Connection with specified port number went wrong." + e.getMessage());
+
+        } catch (Exception e) {
+            System.out.println("Connection went wrong." + e.getMessage());
             throw new DictConnectionException();
         }
 
@@ -83,7 +85,6 @@ public class DictionaryConnection {
         socket.close();}
         catch(Exception e){
             System.out.println("Something went wrong when closing. Error:" + e.getMessage());
-
         }
     }
 
@@ -101,8 +102,60 @@ public class DictionaryConnection {
         Collection<Definition> set = new ArrayList<>();
 
         // TODO Add your code here
+        out.println("DEFINE " + database.getName() + " " + "\"" + word + "\"");
 
+        Status response = readStatus(in);
+        System.out.println(response.getStatusCode());
 
+        switch (response.getStatusCode()) {
+            case 150:
+                String[] initialResponse = splitAtoms(response.getDetails());
+                int numDefinitions = Integer.parseInt(initialResponse[0]);
+                for (int i = 0; i < numDefinitions; i++) {
+                    Status current = readStatus(in);
+                    if (current.getStatusCode() != 151) throw new DictConnectionException();
+                    Definition df = new Definition(word, database.getName());
+                    try {
+                        String line;
+                        while (!(line = in.readLine()).startsWith(".")) {
+                            df.appendDefinition(line);
+                        }
+                    }catch (Exception e) {
+                        throw new DictConnectionException();
+                    }
+                    set.add(df);
+                }
+
+                Status closing = readStatus(in);
+                if (closing.getStatusCode() != 250) throw new DictConnectionException();
+                break;
+
+                /*try {
+                    String line;
+                    while (!(line = in.readLine()).startsWith(".")) {
+                        String[] parts = splitAtoms(line);
+                        String string = parts[0];
+                        String databaseName = parts[1];
+
+                        Definition def = new Definition(string, databaseName);
+                        set.add(def);
+                    }
+                } catch(Exception e){
+                    throw new DictConnectionException();
+                }
+                Status finalResponse = readStatus(in);
+                if (finalResponse.getStatusCode() != 250) throw new DictConnectionException();
+                break;*/
+            case 550:
+//                throw new DictConnectionException("Invalid database");
+                break;
+
+            case 552:
+                // do nothing
+                break;
+            default:
+                throw new DictConnectionException("INVALID RESPONSE");
+        }
 
         return set;
     }
@@ -118,65 +171,72 @@ public class DictionaryConnection {
      * @throws DictConnectionException If the connection was interrupted or the messages don't match their expected value.
      */
     public synchronized Set<String> getMatchList(String word, MatchingStrategy strategy, Database database) throws DictConnectionException {
-        Set<String> matchset = new LinkedHashSet<>();
+        Set<String> set = new LinkedHashSet<>();
 
         // TODO Add your code here
-        try{
-            out.println("MATCH " + database.getName() + " " + strategy.getName() + " " + "\"" + word + "\"");
-            System.out.println("MATCH " + database.getName() + " " + strategy.getName() + " " + "\"" + word + "\"");
 
+        out.println("MATCH " + database.getName() + " " + strategy.getName() + " " + "\"" + word + "\"");
+        System.out.println("MATCH " + database.getName() + " " + strategy.getName() + " " + "\"" + word + "\"");
 
-            Status response = readStatus(in);
-            System.out.println(response.getStatusCode());
-//            switch (response.getStatusCode()) {
-//                case 250:
+        Status response = readStatus(in);
+        System.out.println("Match list first response: " + response.getStatusCode());
+
+        switch (response.getStatusCode()) {
+            case 152:
+                try {
                     String line;
+
                     while (!(line = in.readLine()).startsWith(".")) {
                         //if(!(line.contains("250")||line.contains("111"))){
-                            String[] parts = splitAtoms(line);
-                            String match = parts[1];
-                            matchset.add(match);
-                        }//}
-//                case 550:
-//                    throw new DictConnectionException("Invalid database");
-//                case 551:
-//                    throw new DictConnectionException("Invalid strategy");
-//                case 552:
-//                    break;
-//            }
+                        String[] parts = splitAtoms(line);
+                        System.out.println(line);
+                        String match = parts[1];
+                        set.add(match);
+                    }//}
 
+                } catch (Exception e) {
+                    throw new DictConnectionException("Failed to get matches");
+                }
+                Status finalResponse = readStatus(in);
+                System.out.println("Match list final response: " + finalResponse.getStatusCode());
+                if (finalResponse.getStatusCode() != 250) throw new DictConnectionException();
+                break;
 
+            case 550:
+                break;
+//                throw new DictConnectionException("Invalid database");
+            case 551:
+                break;
+//                throw new DictConnectionException("Invalid strategy");
+            case 552:
+                break;
+            default:
+                throw new DictConnectionException("INVALID response");
+        }
 
-            if(debug){
-            Set<String> temp= matchset;
+        //examine first 6 elements of set of matched words
+        if (debug) {
+            Set<String> temp = set;
             if (!temp.isEmpty()) {
                 // Converting the above Map to an array
                 String arr[] = new String[temp.size()];
                 arr = temp.toArray(arr);
 
-                // Accessing the first element by passing 0
-                // as an argument which by default
-                // accesses and prints out first element
                 System.out.println("First element: " + arr[0]);
                 System.out.println("2nd element: " + arr[1]);
                 System.out.println("3rd element: " + arr[2]);
-                System.out.println("4rd element: " + arr[3]);
-                System.out.println("5rd element: " + arr[4]);
-                System.out.println("6rd element: " + arr[5]);
-            }}
-
-
-            if(false){
-            System.out.println("Matches for keyword '" + word + "':");
-            for (String match : matchset) {
+                System.out.println("4th element: " + arr[3]);
+                System.out.println("5th element: " + arr[4]);
+                System.out.println("6th element: " + arr[5]);
+            }
+        }
+            if(debug){
+            System.out.println("Matches for '" + word + "':");
+            for (String match : set) {
                 System.out.println(match);
             }}
 
-        }catch (Exception e){
-            throw new DictConnectionException("Failed to get matches");
-        }
-
-        return matchset;
+        return set;
     }
 
     /** Requests and retrieves a map of database name to an equivalent database object for all valid databases used in the server.
@@ -203,10 +263,12 @@ public class DictionaryConnection {
                             databaseMap.put(name, new Database(name, description));
                         //}
                     }
+
+                    Status finalResponse = readStatus(in);
+                    if (finalResponse.getStatusCode() != 250) throw new DictConnectionException();
                     break;
                 case 554:
                     break;
-
                 default:
                     throw new DictConnectionException();
             }
@@ -219,7 +281,6 @@ public class DictionaryConnection {
         }catch (Exception e){
             throw new DictConnectionException();
         }
-
         return databaseMap;
     }
 
@@ -233,15 +294,25 @@ public class DictionaryConnection {
         // TODO Add your code here
         try {
             out.println("SHOW STRAT");
-//            out.println("SHOW STRATEGIES");
-//            Status response = readStatus(input);
-            String line;
-            while (!(line = in.readLine()).startsWith(".")) {
-                if(!(line.contains("250")||line.contains("111"))){
-                String[] parts = splitAtoms(line);
 
-                set.add(new MatchingStrategy(parts[0], parts[1]));
-                }
+            Status response = readStatus(in);
+            System.out.println(response.getStatusCode());
+
+            switch (response.getStatusCode()) {
+                case 111:
+
+                    String line;
+                    while (!(line = in.readLine()).startsWith(".")) {
+                        //if (!(line.contains("250") || line.contains("111"))) {
+                            String[] parts = splitAtoms(line);
+                            set.add(new MatchingStrategy(parts[0], parts[1]));
+                        //}
+                    }
+                    Status finish = readStatus(in);
+                    if (finish.getStatusCode() != 250) throw new DictConnectionException();
+                    break;
+                case 555:
+                    break;
             }
 
             // display the list of strategies
@@ -250,6 +321,7 @@ public class DictionaryConnection {
             for (MatchingStrategy strategy : set) {
                 System.out.println(strategy.getName() + "   " + strategy.getDescription());
             }}
+
             return set;
         } catch (Exception e) {
             throw new DictConnectionException();
