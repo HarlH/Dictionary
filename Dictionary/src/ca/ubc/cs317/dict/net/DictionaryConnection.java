@@ -120,24 +120,35 @@ public class DictionaryConnection {
     public synchronized Set<String> getMatchList(String word, MatchingStrategy strategy, Database database) throws DictConnectionException {
         Set<String> matchset = new LinkedHashSet<>();
 
-
         // TODO Add your code here
         try{
             out.println("MATCH " + database.getName() + " " + strategy.getName() + " " + "\"" + word + "\"");
-            if(true){
-                System.out.println("MATCH " + database.getName() + " " + strategy.getName() + " " + "\"" + word + "\"");
-            }
+            System.out.println("MATCH " + database.getName() + " " + strategy.getName() + " " + "\"" + word + "\"");
 
-            String line;
-            while (!(line = in.readLine()).startsWith(".")) {
-                if(!(line.contains("250")||line.contains("111"))){
-                String[] parts = splitAtoms(line);
-                String match = parts[1];
-                matchset.add(match);
-            }}
 
+            Status response = readStatus(in);
+            System.out.println(response.getStatusCode());
+//            switch (response.getStatusCode()) {
+//                case 250:
+                    String line;
+                    while (!(line = in.readLine()).startsWith(".")) {
+                        //if(!(line.contains("250")||line.contains("111"))){
+                            String[] parts = splitAtoms(line);
+                            String match = parts[1];
+                            matchset.add(match);
+                        }//}
+//                case 550:
+//                    throw new DictConnectionException("Invalid database");
+//                case 551:
+//                    throw new DictConnectionException("Invalid strategy");
+//                case 552:
+//                    break;
+//            }
+
+
+
+            if(debug){
             Set<String> temp= matchset;
-
             if (!temp.isEmpty()) {
                 // Converting the above Map to an array
                 String arr[] = new String[temp.size()];
@@ -152,11 +163,10 @@ public class DictionaryConnection {
                 System.out.println("4rd element: " + arr[3]);
                 System.out.println("5rd element: " + arr[4]);
                 System.out.println("6rd element: " + arr[5]);
+            }}
 
-            }
 
-
-            if(debug){
+            if(false){
             System.out.println("Matches for keyword '" + word + "':");
             for (String match : matchset) {
                 System.out.println(match);
@@ -178,26 +188,28 @@ public class DictionaryConnection {
         Map<String, Database> databaseMap = new HashMap<>();
 
         // TODO Add your code here
-
-
         try{
             out.println("SHOW DB");
             Status response = readStatus(in);
 
             switch (response.getStatusCode()) {
                 case 110:
+                    String line;
+                    while (!(line = in.readLine()).startsWith(".")) {
+                        //if(!(line.contains("110"))){
+                            String[] parts = splitAtoms(line);
+                            String name = parts[0];
+                            String description = parts[1];
+                            databaseMap.put(name, new Database(name, description));
+                        //}
+                    }
+                    break;
+                case 554:
+                    break;
 
+                default:
+                    throw new DictConnectionException();
             }
-            String line;
-            while (!(line = in.readLine()).startsWith(".")) {
-                if(!(line.contains("110"))){
-                    String[] parts = splitAtoms(line);
-                    String name = parts[0];
-                    String description = parts[1];
-                    databaseMap.put(name, new Database(name, description));
-                }
-            }
-
             // display the list of databases
             if(debug){
             System.out.println("Databases:");
@@ -221,8 +233,8 @@ public class DictionaryConnection {
         // TODO Add your code here
         try {
             out.println("SHOW STRAT");
-            out.println("SHOW STRATEGIES");
-
+//            out.println("SHOW STRATEGIES");
+//            Status response = readStatus(input);
             String line;
             while (!(line = in.readLine()).startsWith(".")) {
                 if(!(line.contains("250")||line.contains("111"))){
@@ -242,8 +254,6 @@ public class DictionaryConnection {
         } catch (Exception e) {
             throw new DictConnectionException();
         }
-
-
     }
 
     /** Requests and retrieves detailed information about the currently selected database.
